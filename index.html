@@ -426,6 +426,747 @@
             document.getElementById('compCity').addEventListener('input', () => { document.getElementById('prevCompCity').innerText = document.getElementById('compCity').value || '---'; });
             document.getElementById('signTitleInput').addEventListener('input', () => { document.getElementById('prevSignTitle').innerText = document.getElementById('signTitleInput').value || '---'; });
 
+            document.getElementById('compLogo').addEventListener('change', e => {
+                const file = e.target.files[0];
+                if(file) {
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                        const base64Data = ev.target.result;
+                        localStorage.setItem('local_comp_logo', base64Data);
+                        const img = document.getElementById('prevLogo');
+                        img.src = base64Data;
+                        img.style.display = 'block';
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            document.getElementById('compStamp').addEventListener('change', e => {
+                const file = e.target.files[0];
+                if(file) {
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                        const base64Data = ev.target.result;
+                        localStorage.setItem('local_comp_stamp', base64Data);
+                        const img = document.getElementById('prevStamp');
+                        img.src = base64Data;
+                        img.style.display = 'block';
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+
+        function loadImagesFromLocalStorage() {
+            const savedLogo = localStorage.getItem('local_comp_logo');
+            if(savedLogo) {
+                const img = document.getElementById('prevLogo');
+                img.src = savedLogo;
+                img.style.display = 'block';
+            }
+            const savedStamp = localStorage.getItem('local_comp_stamp');
+            if(savedStamp) {
+                const img = document.getElementById('prevStamp');
+                img.src = savedStamp;
+                img.style.display = 'block';
+            }
+        }
+
+        function initDocForm() {
+            const docType = document.getElementById('docType') ? document.getElementById('docType').value : 'عرض سعر';
+            let fields = [
+                { label: 'نوع المستند', id: 'docType', type: 'select', onchange: 'window.onDocTypeChange()', options: `
+                    <option value="عرض سعر" ${docType==='عرض سعر'?'selected':''}>عرض سعر</option>
+                    <option value="عقد اتفاق" ${docType==='عقد اتفاق'?'selected':''}>عقد اتفاق</option>
+                    <option value="شهادة ضمان" ${docType==='شهادة ضمان'?'selected':''}>شهادة ضمان</option>
+                `},
+                { label: 'اسم العميل (المستفيد)', id: 'clientName' },
+                { label: 'رقم الهوية / السجل', id: 'clientIdNum' },
+                { label: 'اسم المشروع', id: 'projectName' },
+                { label: 'موقع المشروع / المدينة', id: 'projectLocation' },
+                { label: 'تاريخ المستند', id: 'quoteDate', type: 'date' },
+                { label: 'رمز العملة المستخدمة', id: 'currencySymbol', value: 'ر.س' }
+            ];
+
+            if (docType === 'شهادة ضمان') {
+                fields.push(
+                    { label: 'رقم القطعة', id: 'plotNum' },
+                    { label: 'رقم المخطط', id: 'planNum' },
+                    { label: 'بنود شهادة الضمان', id: 'warrantyText', type: 'textarea', rows: 6, fullWidth: true, value: `1- تضمن الشركة سلامة مواد العزل وطريقة التنفيذ لمدة ١٠ سنوات.\n2- الضمان لا يشمل سوء الاستخدام.` }
+                );
+            } else {
+                fields.push(
+                    { label: 'مدة التنفيذ (أيام عمل)', id: 'execDays' },
+                    { label: 'نظام الدفعات والسداد', id: 'paymentTermsInput', type: 'textarea', rows: 3, fullWidth: true, value: `- 50% دفعة مقدمة.\n- 50% عند الاستلام النهائي.` },
+                    { label: 'نطاق وخطوات العمل والمواصفات', id: 'projectDesc', type: 'textarea', rows: 4, fullWidth: true, value: `1- تنظيف السطح بالكامل.\n2- تنفيذ طبقات العزل.` },
+                    { label: 'ملاحظات إضافية', id: 'projectNotes', type: 'textarea', rows: 2, fullWidth: true }
+                );
+            }
+            const container = document.getElementById('documentGrid');
+            container.innerHTML = '';
+            fields.forEach(f => {
+                const div = document.createElement('div');
+                div.className = 'form-group' + (f.fullWidth ? ' full-width' : '');
+                div.innerHTML = `
+                    <label>${f.label}</label>
+                    ${f.type === 'textarea' ? `<textarea id="${f.id}" rows="${f.rows||3}">${f.value||''}</textarea>` :
+                      f.type === 'select' ? `<select id="${f.id}" onchange="${f.onchange||''}">${f.options}</select>` :
+                      `<input type="${f.type||'text'}" id="${f.id}" value="${f.value!==undefined?f.value:''}">`}
+                `;
+                container.appendChild(div);
+            });
+            bindDocEvents();
+            toggleUI();
+        }
+
+        window.onDocTypeChange = function() { initDocForm(); updateCalculations(); }
+
+        function renderInputRows() {
+            const container = document.getElementById('dynamicRowsContainer');
+            container.innerHTML = '';
+            tableRowsData.forEach((row, index) => {
+                const div = document.createElement('div');
+                div.style = 'display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 8px; margin-bottom: 8px; align-items: center;';
+                div.innerHTML = `
+                    <input type="text" placeholder="بيان البند" value="${row.desc}" oninput="window.updateRowData(${index}, 'desc', this.value)">
+                    <input type="text" placeholder="الوحدة" value="${row.unit}" oninput="window.updateRowData(${index}, 'unit', this.value)">
+                    <input type="number" placeholder="الكمية" value="${row.qty}" oninput="window.updateRowData(${index}, 'qty', this.value)">
+                    <input type="number" placeholder="السعر" value="${row.price}" oninput="window.updateRowData(${index}, 'price', this.value)">
+                    <button type="button" class="btn btn-danger" onclick="window.removeTableRow(${index})">حذف</button>
+                `;
+                container.appendChild(div);
+            });
+            updateCalculations();
+        }
+
+        window.addTableRow = function() {
+            tableRowsData.push({ desc: 'بند عمل جديد', unit: 'م²', qty: 1, price: 0 });
+            renderInputRows();
+        }
+
+        window.removeTableRow = function(index) {
+            if(tableRowsData.length > 1) { tableRowsData.splice(index, 1); renderInputRows(); }
+            else { showToast('يجب أن يحتوي الجدول على بند واحد على الأقل.'); }
+        }
+
+        window.updateRowData = function(index, field, value) {
+            tableRowsData[index][field] = field === 'qty' || field === 'price' ? (parseFloat(value) || 0) : value;
+            updateCalculations();
+        }
+
+        window.updateCalculations = function() {
+            const currency = document.getElementById('currencySymbol') ? document.getElementById('currencySymbol').value || 'ر.س' : 'ر.س';
+            document.querySelectorAll('.currLabel').forEach(el => el.innerText = currency);
+
+            const docType = document.getElementById('docType').value;
+            const includeTax = document.getElementById('taxCheckbox') ? document.getElementById('taxCheckbox').checked : true;
+            const taxRate = document.getElementById('taxRateInput') ? parseFloat(document.getElementById('taxRateInput').value) || 0 : 15;
+            document.getElementById('taxRateLabel').innerText = taxRate;
+
+            let subTotal = 0;
+            let tbodyHTML = '';
+            if(docType !== 'شهادة ضمان') {
+                tableRowsData.forEach((row, i) => {
+                    const total = row.qty * row.price;
+                    subTotal += total;
+                    tbodyHTML += `<tr><td>${i+1}</td><td>${row.desc}</td><td>${row.unit}</td><td>${row.qty.toLocaleString()}</td><td>${row.price.toLocaleString()}</td><td>${total.toLocaleString('en', {minimumFractionDigits: 2})}</td></tr>`;
+                });
+                document.getElementById('previewTableBody').innerHTML = tbodyHTML;
+            }
+
+            document.getElementById('subTotal').innerText = subTotal.toLocaleString('en', {minimumFractionDigits: 2});
+            let taxTotal = 0, grandTotal = subTotal;
+            if(includeTax && docType !== 'شهادة ضمان') {
+                taxTotal = subTotal * (taxRate / 100);
+                grandTotal = subTotal + taxTotal;
+                document.getElementById('taxRow').style.display = 'flex';
+                document.getElementById('taxTotal').innerText = taxTotal.toLocaleString('en', {minimumFractionDigits: 2});
+            } else {
+                document.getElementById('taxRow').style.display = 'none';
+            }
+            document.getElementById('grandTotal').innerText = grandTotal.toLocaleString('en', {minimumFractionDigits: 2});
+            updateMeta();
+        }
+
+        function updateMeta() {
+            const getVal = id => document.getElementById(id) ? document.getElementById(id).value.trim() : '';
+            document.getElementById('prevClient').innerText = getVal('clientName');
+            document.getElementById('lineClient').style.display = getVal('clientName') ? 'block' : 'none';
+            document.getElementById('prevClientId').innerText = getVal('clientIdNum');
+            document.getElementById('lineClientId').style.display = getVal('clientIdNum') ? 'block' : 'none';
+            document.getElementById('prevProjectName').innerText = getVal('projectName');
+            document.getElementById('lineProjectName').style.display = getVal('projectName') ? 'block' : 'none';
+            document.getElementById('prevLocation').innerText = getVal('projectLocation');
+            document.getElementById('lineLocation').style.display = getVal('projectLocation') ? 'block' : 'none';
+            document.getElementById('prevDate').innerText = getVal('quoteDate').replace(/-/g, '/');
+            document.getElementById('lineDate').style.display = getVal('quoteDate') ? 'block' : 'none';
+            document.getElementById('prevExecDays').innerText = getVal('execDays');
+            document.getElementById('lineExecDays').style.display = getVal('execDays') ? 'block' : 'none';
+
+            const docType = getVal('docType');
+            document.getElementById('prevPlotNum').innerText = getVal('plotNum');
+            document.getElementById('linePlot').style.display = (docType === 'شهادة ضمان' && getVal('plotNum')) ? 'block' : 'none';
+            document.getElementById('prevPlanNum').innerText = getVal('planNum');
+            document.getElementById('linePlan').style.display = (docType === 'شهادة ضمان' && getVal('planNum')) ? 'block' : 'none';
+
+            document.getElementById('prevTableDesc').innerText = getVal('projectDesc');
+            document.getElementById('prevWarrantyText').innerText = getVal('warrantyText');
+            const notes = getVal('projectNotes');
+            document.getElementById('notesContainer').style.display = notes ? 'block' : 'none';
+            document.getElementById('prevNotesText').innerText = notes;
+        }
+
+        function toggleUI() {
+            const docType = document.getElementById('docType').value;
+            document.getElementById('prevDocTitleBanner').innerText = docType;
+            document.getElementById('warrantyTermsContainer').style.display = docType === 'شهادة ضمان' ? 'block' : 'none';
+            document.getElementById('financialSectionWrapper').style.display = docType === 'شهادة ضمان' ? 'none' : 'block';
+            document.getElementById('scopeSectionWrapper').style.display = docType === 'شهادة ضمان' ? 'none' : 'block';
+            document.getElementById('paymentTermsPreviewBox').style.display = docType === 'شهادة ضمان' ? 'none' : 'block';
+            document.getElementById('taxGroupContainer').parentElement.style.display = docType === 'شهادة ضمان' ? 'none' : 'grid';
+
+            if(docType !== 'شهادة ضمان') {
+                const terms = document.getElementById('paymentTermsInput') ? document.getElementById('paymentTermsInput').value : '';
+                document.getElementById('paymentMilestonesList').innerHTML = terms.split('\n').map(l => `<li>${l}</li>`).join('');
+            }
+        }
+
+        function bindDocEvents() {
+            ['clientName', 'clientIdNum', 'projectName', 'projectLocation', 'plotNum', 'planNum', 'execDays', 'quoteDate', 'currencySymbol'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) el.addEventListener('input', window.updateCalculations);
+            });
+            ['paymentTermsInput', 'projectDesc', 'warrantyText', 'projectNotes'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) el.addEventListener('input', () => { toggleUI(); window.updateCalculations(); });
+            });
+        }
+
+        window.saveDocumentToCloud = async function() {
+            const companyKey = getComputedCompanyKey();
+            if(!companyKey) {
+                showToast('الرجاء كتابة "اسم المؤسسة" و "رقم السجل التجاري" أولاً.');
+                return;
+            }
+
+            showLoading(true);
+            try {
+                const docType = document.getElementById('docType').value;
+                const docIdNum = 'DOC-' + Math.floor(100000 + Math.random() * 900000);
+                
+                const compData = {
+                    name: document.getElementById('compName').value,
+                    reg: document.getElementById('compReg').value,
+                    activity: document.getElementById('compActivity').value,
+                    city: document.getElementById('compCity').value,
+                    signTitle: document.getElementById('signTitleInput').value,
+                    updatedAt: new Date().toISOString()
+                };
+
+                await setDoc(doc(db, "companies", companyKey), compData, { merge: true });
+
+                const docData = {
+                    companyKey: companyKey,
+                    docNumber: docIdNum,
+                    docType: docType,
+                    clientName: document.getElementById('clientName').value || 'عميل عام',
+                    clientIdNum: document.getElementById('clientIdNum').value || '',
+                    projectName: document.getElementById('projectName').value || '',
+                    projectLocation: document.getElementById('projectLocation').value || '',
+                    quoteDate: document.getElementById('quoteDate').value || new Date().toISOString().split('T')[0],
+                    createdAt: new Date().toISOString(),
+                    rows: tableRowsData,
+                    subTotal: document.getElementById('subTotal').innerText,
+                    grandTotal: document.getElementById('grandTotal').innerText
+                };
+
+                await addDoc(collection(db, "documents"), docData);
+                showLoading(false);
+                showToast(`تم حفظ المستند بنجاح برقم: ${docIdNum}`);
+                await window.loadCloudArchive();
+            } catch(err) {
+                showLoading(false);
+                showToast('خطأ أثناء الحفظ: ' + err.message);
+                console.error(err);
+            }
+        };
+
+        window.loadCloudArchive = async function() {
+            const companyKey = getComputedCompanyKey();
+            if(!companyKey) {
+                showToast('الرجاء إدخال اسم المؤسسة ورقم السجل التجاري أولاً.');
+                return;
+            }
+
+            showLoading(true);
+            try {
+                const q = query(collection(db, "documents"), where("companyKey", "==", companyKey));
+                const querySnapshot = await getDocs(q);
+                allCloudDocuments = [];
+                querySnapshot.forEach((docSnap) => {
+                    allCloudDocuments.push({ id: docSnap.id, ...docSnap.data() });
+                });
+                renderArchive(allCloudDocuments);
+                showLoading(false);
+                showToast(`تم العثور على ${allCloudDocuments.length} مستند.`);
+            } catch(err) {
+                showLoading(false);
+                showToast('خطأ في جلب الأرشيف: ' + err.message);
+            }
+        };
+
+        function renderArchive(docs) {
+            const container = document.getElementById('archiveListContainer');
+            if(docs.length === 0) {
+                container.innerHTML = 'لا توجد مستندات مسجلة لهذه المؤسسة حتى الآن.';
+                return;
+            }
+            container.innerHTML = docs.map((item) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 10px 15px; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 8px;">
+                    <div>
+                        <strong>#${item.docNumber}</strong> | <strong>العميل:</strong> ${item.clientName} (${item.docType})
+                        <div style="font-size: 11px; color: #64748b;">التاريخ: ${item.quoteDate} | الإجمالي: ${item.grandTotal}</div>
+                    </div>
+                    <button type="button" class="btn btn-danger" onclick="window.deleteCloudDoc('${item.id}')">حذف</button>
+                </div>
+            `).join('');
+        }
+
+        window.deleteCloudDoc = async function(id) {
+            if(confirm('هل أنت متأكد من حذف هذا المستند نهائياً؟')) {
+                showLoading(true);
+                try {
+                    await deleteDoc(doc(db, "documents", id));
+                    showLoading(false);
+                    showToast('تم الحذف بنجاح');
+                    await window.loadCloudArchive();
+                } catch(err) {
+                    showLoading(false);
+                    showToast('خطأ في الحذف');
+                }
+            }
+        };
+
+        // تم تعديل هذه الدالة لحل مشكلة الطباعة الفارغة تماماً
+        window.exportToPDF = function() {
+            const element = document.getElementById('printableArea');
+            const originalTransform = element.style.transform;
+            
+            // إلغاء التصغير مؤقتاً لكيلتقطه المحول بالأبعاد الحقيقية الكاملة
+            element.style.transform = 'scale(1)';
+            
+            const opt = {
+                margin: 10,
+                filename: 'Contract_Proposal.pdf',
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().from(element).set(opt).save().then(() => {
+                // استعادة حالة التصغير الأصلية بعد الحفظ
+                element.style.transform = originalTransform;
+            }).catch(err => {
+                console.error(err);
+                element.style.transform = originalTransform;
+                showToast('حدث خطأ أثناء تصدير الملف.');
+            });
+        };
+    </script>
+</body>
+</html>
+        }
+        .card h2 { font-size: 16px; color: var(--primary); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 2px solid #f1f5f9; }
+
+        .form-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+
+        @media(min-width: 768px) {
+            body { padding: 20px; }
+            header { padding: 20px; }
+            header h1 { font-size: 24px; }
+            header p { font-size: 14px; }
+            .card { padding: 25px; margin-bottom: 25px; }
+            .card h2 { font-size: 18px; }
+            .form-grid { grid-template-columns: repeat(2, 1fr); gap: 15px; }
+            .form-group.full-width { grid-column: span 2; }
+        }
+
+        .form-group { margin-bottom: 10px; }
+        label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 13px; }
+        input, select, textarea {
+            width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px;
+            font-size: 14px; outline: none; transition: border-color 0.2s; background-color: #fff;
+        }
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--secondary); box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+        }
+
+        .checkbox-group { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+        .checkbox-group input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
+        .checkbox-group label { margin-bottom: 0; cursor: pointer; font-size: 14px; }
+
+        .btn {
+            background-color: var(--secondary); color: white; border: none; padding: 12px 20px;
+            border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; width: 100%; transition: background 0.2s;
+        }
+        .btn:hover { background-color: #0f766e; }
+        .btn-danger { background-color: #ef4444; padding: 6px 10px; font-size: 12px; width: auto; }
+        .btn-danger:hover { background-color: #dc2626; }
+        .btn-action { background: linear-gradient(135deg, #f59e0b, #d97706); margin-top: 10px; }
+        .btn-action:hover { background: linear-gradient(135deg, #d97706, #b45309); }
+
+        .signature-pad-container { border: 2px dashed var(--border-color); border-radius: 8px; background: #fff; position: relative; margin-top: 5px; overflow: hidden; }
+        canvas#sigCanvas { width: 100%; height: 120px; touch-action: none; cursor: crosshair; display: block; }
+        .sig-preview { max-width: 120px; max-height: 60px; object-fit: contain; display: none; }
+
+        .preview-container-wrapper { width: 100%; overflow-x: auto; background: #e2e8f0; border-radius: 12px; padding: 10px; margin-top: 15px; }
+        .zoom-controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
+        .zoom-btn { background: var(--primary); color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold; }
+
+        .preview-box {
+            background: white; border: 1px solid var(--border-color); padding: 30px; border-radius: 8px;
+            width: 800px; margin: 0 auto; transform-origin: top right; transform: scale(0.55); transition: transform 0.2s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        @media(min-width: 768px) {
+            .preview-container-wrapper { padding: 20px; }
+            .preview-box { transform: scale(1); }
+            .zoom-controls { display: none; }
+        }
+
+        .invoice-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 15px; }
+        .company-info h3 { color: var(--primary); font-size: 20px; margin-bottom: 5px; }
+        .company-info p { font-size: 12px; color: #64748b; }
+        .company-logo-preview { max-width: 80px; max-height: 80px; object-fit: contain; }
+
+        .doc-title-banner { text-align: center; font-size: 18px; font-weight: bold; color: var(--primary); margin: 15px 0; padding: 8px; background: #f1f5f9; border-radius: 6px; }
+
+        .invoice-meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; background: #f8fafc; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 13px; }
+        .section-title { font-size: 14px; font-weight: bold; color: var(--primary); margin: 15px 0 8px 0; border-right: 4px solid var(--secondary); padding-right: 8px; }
+
+        .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+        .items-table th, .items-table td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: right; font-size: 13px; }
+        .items-table th { background-color: var(--primary); color: white; }
+
+        .totals-section { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+        .totals-box { width: 100%; max-width: 300px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+        .totals-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
+        .totals-row.final { border-top: 2px solid var(--primary); padding-top: 6px; font-weight: bold; color: var(--primary); font-size: 15px; }
+
+        .terms-list { font-size: 12px; color: #334155; padding-right: 20px; margin-bottom: 15px; line-height: 1.6; }
+        .terms-list li { margin-bottom: 4px; }
+
+        .invoice-footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+        .stamp-preview { max-width: 90px; max-height: 90px; object-fit: contain; }
+
+        #toast {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff;
+            padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 9999; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        #loadingOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8);
+            display: flex; justify-content: center; align-items: center; z-index: 10000; display: none;
+            font-size: 18px; font-weight: bold; color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loadingOverlay">جاري معالجة وحفظ البيانات سحابياً...</div>
+    <div id="toast">رسالة التنبيه</div>
+
+    <div class="container">
+        <header>
+            <h1>منصة إدارة المقاولات وعروض الأسعار الذكية</h1>
+            <p>سجل بيانات مؤسستك لترتبط برقم فريد في قاعدة البيانات، مع تخزين الصور محلياً بدون أي تكاليف</p>
+        </header>
+
+        <!-- بيانات المؤسسة والمستند -->
+        <div class="card">
+            <h2>بيانات المؤسسة المصدرة للمستند</h2>
+            <div class="form-grid" id="companyGrid"></div>
+        </div>
+
+        <div class="card">
+            <h2>تفاصيل وبنود المستند الجديد</h2>
+            <div class="form-grid" id="documentGrid"></div>
+            
+            <div style="margin-top: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="font-size: 14px; color: var(--primary);">بنود الأعمال والأسعار</h3>
+                    <button type="button" class="btn" style="width: auto; padding: 6px 12px; font-size: 12px;" onclick="window.addTableRow()">+ إضافة بند جديد</button>
+                </div>
+                <div id="dynamicRowsContainer"></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px; align-items: center;">
+                <div class="checkbox-group" id="taxGroupContainer">
+                    <input type="checkbox" id="taxCheckbox" checked onchange="window.updateCalculations()">
+                    <label for="taxCheckbox">تفعيل ضريبة القيمة المضافة</label>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>نسبة الضريبة المئوية (%)</label>
+                    <input type="number" id="taxRateInput" value="15" min="0" max="100" step="0.5" oninput="window.updateCalculations()">
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label>التوقيع الإلكتروني (ارسم بإصبعك أو الماوس أدناه):</label>
+                <div class="signature-pad-container">
+                    <canvas id="sigCanvas"></canvas>
+                </div>
+                <button type="button" class="btn btn-danger" style="margin-top: 6px;" onclick="window.clearSignature()">مسح التوقيع وإعادة الرسم</button>
+            </div>
+        </div>
+
+        <!-- المعاينة -->
+        <div class="card">
+            <div class="zoom-controls">
+                <button type="button" class="zoom-btn" onclick="window.zoomIn()">➕ تكبير</button>
+                <button type="button" class="zoom-btn" onclick="window.resetZoom()">🔄 الافتراضي</button>
+                <button type="button" class="zoom-btn" onclick="window.zoomOut()">➖ تصغير</button>
+            </div>
+
+            <div class="preview-container-wrapper">
+                <div class="preview-box" id="printableArea">
+                    <div class="invoice-header">
+                        <div class="company-info">
+                            <h3 id="prevCompName">اسم المؤسسة</h3>
+                            <p id="prevCompRegWrap">سجل تجاري رقم: <span id="prevCompReg">---</span></p>
+                            <p id="prevCompActivity">---</p>
+                            <p id="prevCompCity">---</p>
+                        </div>
+                        <div>
+                            <img id="prevLogo" class="company-logo-preview" src="" alt="شعار المؤسسة" style="display:none;">
+                        </div>
+                    </div>
+
+                    <div style="text-align: left; font-size: 12px; font-weight: bold; color: var(--secondary); margin-bottom: 5px;">
+                        رقم المستند: <span id="prevDocNumber">تلقائي عند الحفظ</span>
+                    </div>
+
+                    <div class="doc-title-banner" id="prevDocTitleBanner">عرض سعر</div>
+
+                    <div class="invoice-meta" id="invoiceMetaBox">
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <p id="lineClient" style="display:none;"><strong>مقدم إلى السيد/ة:</strong> <span id="prevClient"></span> المحترم/ة،</p>
+                            <p id="lineClientId" style="display:none;"><strong>رقم الهوية:</strong> <span id="prevClientId"></span></p>
+                            <p id="lineProjectName" style="display:none;"><strong>المشروع:</strong> <span id="prevProjectName"></span></p>
+                            <p id="lineLocation" style="display:none;"><strong>الموقع:</strong> <span id="prevLocation"></span></p>
+                            <p id="linePlot" style="display:none;"><strong>رقم القطعة:</strong> <span id="prevPlotNum"></span></p>
+                            <p id="linePlan" style="display:none;"><strong>رقم المخطط:</strong> <span id="prevPlanNum"></span></p>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <p id="lineDate" style="display:none;"><strong>التاريخ:</strong> <span id="prevDate"></span></p>
+                            <p id="lineExecDays" style="display:none;"><strong>مدة التنفيذ:</strong> <span id="prevExecDays"></span></p>
+                        </div>
+                    </div>
+
+                    <div id="scopeSectionWrapper">
+                        <div class="section-title">أولاً: نطاق وخطوات العمل والمواصفات الفنية</div>
+                        <div style="font-size: 13px; margin-bottom: 12px; white-space: pre-line; line-height: 1.6;" id="prevTableDesc"></div>
+                    </div>
+
+                    <div id="notesContainer" style="display:none; margin-bottom: 12px;">
+                        <div style="font-size: 13px; font-weight: bold; color: var(--primary); margin-bottom: 3px;">ملاحظات هامة:</div>
+                        <div style="font-size: 13px; white-space: pre-line; background: #f8fafc; padding: 8px; border-radius: 6px; border: 1px dashed var(--border-color);" id="prevNotesText"></div>
+                    </div>
+
+                    <div id="financialSectionWrapper">
+                        <div class="section-title">ثانياً: التفاصيل المالية وجدول الأسعار</div>
+                        <table class="items-table">
+                            <thead>
+                                <tr>
+                                    <th>م</th>
+                                    <th>بيان الأعمال والمواد</th>
+                                    <th>الوحدة</th>
+                                    <th>الكمية</th>
+                                    <th>السعر الفردي</th>
+                                    <th>الإجمالي (<span class="currLabel">ر.س</span>)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="previewTableBody"></tbody>
+                        </table>
+
+                        <div class="totals-section">
+                            <div class="totals-box">
+                                <div class="totals-row">
+                                    <span>المجموع الفرعي:</span>
+                                    <span><span id="subTotal">0.00</span> <span class="currLabel">ر.س</span></span>
+                                </div>
+                                <div class="totals-row" id="taxRow">
+                                    <span>ضريبة القيمة المضافة (<span id="taxRateLabel">15</span>%):</span>
+                                    <span><span id="taxTotal">0.00</span> <span class="currLabel">ر.س</span></span>
+                                </div>
+                                <div class="totals-row final">
+                                    <span>الإجمالي الشامل:</span>
+                                    <span><span id="grandTotal">0.00</span> <span class="currLabel">ر.س</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="paymentTermsPreviewBox">
+                        <div class="section-title" id="paymentPreviewTitle">ثالثاً: نظام وطريقة السداد ودفعات المستحقات</div>
+                        <ul class="terms-list" id="paymentMilestonesList"></ul>
+                    </div>
+
+                    <div id="warrantyTermsContainer" style="display:none;">
+                        <div class="section-title">شروط وأحكام شهادة الضمان:</div>
+                        <div style="font-size: 13px; white-space: pre-line; line-height: 1.6;" id="prevWarrantyText"></div>
+                    </div>
+
+                    <div class="invoice-footer">
+                        <div>
+                            <p style="font-size: 12px; color: #64748b;" id="signAuthText">عناية الإدارة</p>
+                            <p style="font-size: 11px; color: #64748b; margin-top: 3px;" id="prevSignTitle">معتمد من الإدارة</p>
+                            <div style="margin-top: 10px;">
+                                <img id="prevSigImage" class="sig-preview" alt="التوقيع الإلكتروني">
+                            </div>
+                        </div>
+                        <div>
+                            <img id="prevStamp" class="stamp-preview" src="" alt="ختم المؤسسة" style="display:none;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-action" onclick="window.exportToPDF()">تصدير وتحميل الملف كـ PDF احترافي</button>
+            <button type="button" class="btn" style="margin-top: 10px; background-color: #3b82f6;" onclick="window.saveDocumentToCloud()">حفظ المستند وربطه بالمؤسسة سحابياً</button>
+        </div>
+
+        <!-- الأرشيف السحابي الخاص بالمؤسسة -->
+        <div class="card">
+            <h2>الأرشيف السحابي لمستندات المؤسسة</h2>
+            <div style="margin-bottom: 12px; font-size: 13px; color: #64748b;">
+                استعرض المستندات السابقة لنفس المؤسسة عن طريق إدخال (اسم المؤسسة ورقم السجل التجاري) في الحقول بالأعلى ثم الضغط هنا:
+                <button type="button" class="btn" style="width: auto; padding: 6px 14px; font-size: 12px; margin-top: 6px;" onclick="window.loadCloudArchive()">جلب وعرض أرشيف المؤسسة</button>
+            </div>
+            <div id="archiveListContainer" style="font-size: 13px; color: #64748b;">اضغط على الزر أعلاه لعرض الأرشيف.</div>
+        </div>
+    </div>
+
+    <!-- سكربت Firebase ومنطق التخزين المحلي للصور -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+        import { getFirestore, doc, setDoc, collection, addDoc, getDocs, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBREVVtMzKhwi0xAUWO2dTvLMz0UucEs3E",
+            authDomain: "mostanadat.firebaseapp.com",
+            projectId: "mostanadat",
+            storageBucket: "mostanadat.firebasestorage.app",
+            messagingSenderId: "197735047872",
+            appId: "1:197735047872:web:a21d2dd6253265bf980325"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let currentZoom = 0.55;
+        let tableRowsData = [{ desc: 'تنفيذ أعمال العزل المتفق عليها', unit: 'م²', qty: 100, price: 40 }];
+        let canvas, ctx, isDrawing = false;
+        let allCloudDocuments = [];
+
+        function showLoading(show) { document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none'; }
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg; t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3500);
+        }
+
+        function getComputedCompanyKey() {
+            const name = document.getElementById('compName') ? document.getElementById('compName').value.trim() : '';
+            const reg = document.getElementById('compReg') ? document.getElementById('compReg').value.trim() : '';
+            if(!name || !reg) return null;
+            const cleanName = name.toLowerCase().replace(/\s+/g, '_');
+            const cleanReg = reg.toLowerCase().replace(/\s+/g, '_');
+            return `${cleanName}_${cleanReg}`;
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initCompanyForm();
+            initDocForm();
+            initSignaturePad();
+            updateCalculations();
+            resetZoom();
+            loadImagesFromLocalStorage();
+        });
+
+        function initSignaturePad() {
+            canvas = document.getElementById('sigCanvas');
+            ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            ctx.strokeStyle = '#1e3a8a';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+
+            const getPos = e => {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                return { x: clientX - rect.left, y: clientY - rect.top };
+            };
+
+            const startDraw = e => { isDrawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); e.preventDefault(); };
+            const draw = e => { if (!isDrawing) return; const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); updateSignaturePreview(); e.preventDefault(); };
+            const stopDraw = () => { isDrawing = false; };
+
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', draw);
+            window.addEventListener('mouseup', stopDraw);
+            canvas.addEventListener('touchstart', startDraw);
+            canvas.addEventListener('touchmove', draw);
+            window.addEventListener('touchend', stopDraw);
+        }
+
+        window.clearSignature = function() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            updateSignaturePreview();
+        }
+
+        function updateSignaturePreview() {
+            const sigImg = document.getElementById('prevSigImage');
+            const blank = document.createElement('canvas');
+            blank.width = canvas.width; blank.height = canvas.height;
+            if (canvas.toDataURL() === blank.toDataURL()) {
+                sigImg.style.display = 'none'; sigImg.src = '';
+            } else {
+                sigImg.src = canvas.toDataURL(); sigImg.style.display = 'block';
+            }
+        }
+
+        window.zoomIn = function() { if (currentZoom < 1.2) { currentZoom += 0.15; applyZoom(); } }
+        window.zoomOut = function() { if (currentZoom > 0.3) { currentZoom -= 0.15; applyZoom(); } }
+        window.resetZoom = function() { currentZoom = window.innerWidth < 768 ? 0.55 : 1; applyZoom(); }
+        function applyZoom() { document.getElementById('printableArea').style.transform = `scale(${currentZoom})`; }
+
+        function initCompanyForm() {
+            const fields = [
+                { label: 'اسم الشركة أو المؤسسة', id: 'compName' },
+                { label: 'رقم السجل التجاري', id: 'compReg' },
+                { label: 'نشاط الشركة / التخصصات', id: 'compActivity' },
+                { label: 'المدينة / الفرع', id: 'compCity' },
+                { label: 'مسؤول التوقيع (مثل: المدير العام / المشرف العام)', id: 'signTitleInput', value: 'معتمد من الإدارة والمشرف العام' },
+                { label: 'شعار الشركة (Logo - محلي مجاني)', id: 'compLogo', type: 'file' },
+                { label: 'ختم المؤسسة (محلي مجاني)', id: 'compStamp', type: 'file' }
+            ];
+            const container = document.getElementById('companyGrid');
+            container.innerHTML = '';
+            fields.forEach(f => {
+                const div = document.createElement('div');
+                div.className = 'form-group' + (f.fullWidth ? ' full-width' : '');
+                div.innerHTML = `<label>${f.label}</label><input type="${f.type||'text'}" id="${f.id}" value="${f.value!==undefined?f.value:''}">`;
+                container.appendChild(div);
+            });
+
+            document.getElementById('compName').addEventListener('input', () => { document.getElementById('prevCompName').innerText = document.getElementById('compName').value || 'اسم المؤسسة'; });
+            document.getElementById('compReg').addEventListener('input', () => { document.getElementById('prevCompReg').innerText = document.getElementById('compReg').value || '---'; });
+            document.getElementById('compActivity').addEventListener('input', () => { document.getElementById('prevCompActivity').innerText = document.getElementById('compActivity').value || '---'; });
+            document.getElementById('compCity').addEventListener('input', () => { document.getElementById('prevCompCity').innerText = document.getElementById('compCity').value || '---'; });
+            document.getElementById('signTitleInput').addEventListener('input', () => { document.getElementById('prevSignTitle').innerText = document.getElementById('signTitleInput').value || '---'; });
+
             // تخزين الصور محلياً في المتصفح لتوفير التكاليف تماماً
             document.getElementById('compLogo').addEventListener('change', e => {
                 const file = e.target.files[0];

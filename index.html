@@ -1491,20 +1491,43 @@
             }
         };
 
-        window.exportToPDF = function() {
-            const element = document.getElementById('printableArea');
-            const originalTransform = element.style.transform;
-            element.style.transform = 'scale(1)';
-            const opt = {
-                margin: 10, filename: 'Contract_Proposal.pdf',
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-            html2pdf().from(element).set(opt).save().then(() => {
-                element.style.transform = originalTransform;
-            });
-        };
+       window.exportToPDF = async function() {
+    const element = document.getElementById('printableArea');
+    if (!element) return;
+
+    showLoading(true);
+
+    const originalTransform = element.style.transform;
+    const originalTransformOrigin = element.style.transformOrigin;
+
+    element.style.transform = 'none';
+    element.style.transformOrigin = 'unset';
+
+    const opt = {
+        margin:       [8, 8, 8, 8],
+        filename:     `Document_${Date.now()}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { 
+            scale: 2,
+            useCORS: true,
+            logging: false, 
+            scrollY: 0,
+            scrollX: 0
+        },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    try {
+        await html2pdf().set(opt).from(element).save();
+    } catch (err) {
+        console.error('PDF Export Error:', err);
+        showToast('حدث خطأ أثناء تصدير ملف PDF');
+    } finally {
+        element.style.transform = originalTransform;
+        element.style.transformOrigin = originalTransformOrigin;
+        showLoading(false);
+    }
+};
     </script>
 </body>
 </html>
